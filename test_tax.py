@@ -3,6 +3,7 @@ from tax_calculator import (
     calculate_bonus_tax_separate,
     calculate_bonus_tax_merged,
     compare_bonus_modes,
+    reverse_calculate_tax,
 )
 
 
@@ -236,6 +237,157 @@ def test_bonus_zero():
     print("✓ 测试通过\n")
 
 
+def test_reverse_basic():
+    """反算：1月税后9850，反算税前应为10000"""
+    forward = calculate_tax(
+        monthly_income=10000,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=1,
+    )
+    after_tax = 10000 - forward["monthly_tax"]
+    result = reverse_calculate_tax(
+        after_tax_income=after_tax,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=1,
+    )
+    print("=== 测试用例14：反算基本场景 ===")
+    print(f"已知税后: {after_tax}")
+    print(f"反算税前: {result['pre_tax_income']}")
+    print(f"反算月个税: {result['monthly_tax']}")
+    assert abs(result["pre_tax_income"] - 10000) < 0.02, f"预期10000，实际{result['pre_tax_income']}"
+    assert abs(result["after_tax_income"] - after_tax) < 0.02
+    print("✓ 测试通过\n")
+
+
+def test_reverse_with_deduction():
+    """反算：有专项扣除场景"""
+    forward = calculate_tax(
+        monthly_income=15000,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=3000,
+        months_count=1,
+    )
+    after_tax = 15000 - forward["monthly_tax"]
+    result = reverse_calculate_tax(
+        after_tax_income=after_tax,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=3000,
+        months_count=1,
+    )
+    print("=== 测试用例15：反算有专项扣除 ===")
+    print(f"已知税后: {after_tax}")
+    print(f"反算税前: {result['pre_tax_income']}")
+    assert abs(result["pre_tax_income"] - 15000) < 0.02, f"预期15000，实际{result['pre_tax_income']}"
+    print("✓ 测试通过\n")
+
+
+def test_reverse_no_tax():
+    """反算：低于起征点，无需缴税"""
+    result = reverse_calculate_tax(
+        after_tax_income=4000,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=1,
+    )
+    print("=== 测试用例16：反算低于起征点 ===")
+    print(f"税后=税前: {result['pre_tax_income']}")
+    assert result["monthly_tax"] == 0.0
+    assert abs(result["pre_tax_income"] - 4000) < 0.01
+    print("✓ 测试通过\n")
+
+
+def test_reverse_high_income():
+    """反算：高收入场景，跨税率档"""
+    forward = calculate_tax(
+        monthly_income=50000,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=1,
+    )
+    after_tax = 50000 - forward["monthly_tax"]
+    result = reverse_calculate_tax(
+        after_tax_income=after_tax,
+        cumulative_income=0,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=1,
+    )
+    print("=== 测试用例17：反算高收入 ===")
+    print(f"已知税后: {after_tax}")
+    print(f"反算税前: {result['pre_tax_income']}")
+    print(f"适用税率: {result['tax_rate']}")
+    assert abs(result["pre_tax_income"] - 50000) < 0.02, f"预期50000，实际{result['pre_tax_income']}"
+    print("✓ 测试通过\n")
+
+
+def test_reverse_cumulative():
+    """反算：有累计收入和已预缴税额的场景"""
+    forward = calculate_tax(
+        monthly_income=20000,
+        cumulative_income=100000,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=6,
+        cumulative_prepaid_tax=3480,
+        cumulative_special_additional_deduction=0,
+    )
+    after_tax = 20000 - forward["monthly_tax"]
+    result = reverse_calculate_tax(
+        after_tax_income=after_tax,
+        cumulative_income=100000,
+        cumulative_tax_free_deduction=0,
+        cumulative_special_deduction=0,
+        months_count=6,
+        cumulative_prepaid_tax=3480,
+        cumulative_special_additional_deduction=0,
+    )
+    print("=== 测试用例18：反算有累计收入 ===")
+    print(f"已知税后: {after_tax}")
+    print(f"反算税前: {result['pre_tax_income']}")
+    assert abs(result["pre_tax_income"] - 20000) < 0.02, f"预期20000，实际{result['pre_tax_income']}"
+    print("✓ 测试通过\n")
+
+
+def test_reverse_round_trip():
+    """反算：双向验证，先算后反算再算，结果应一致"""
+    for pre_tax in [8000, 15000, 30000, 80000, 150000]:
+        forward = calculate_tax(
+            monthly_income=pre_tax,
+            cumulative_income=0,
+            cumulative_tax_free_deduction=0,
+            cumulative_special_deduction=0,
+            months_count=1,
+        )
+        after_tax = pre_tax - forward["monthly_tax"]
+        reverse = reverse_calculate_tax(
+            after_tax_income=after_tax,
+            cumulative_income=0,
+            cumulative_tax_free_deduction=0,
+            cumulative_special_deduction=0,
+            months_count=1,
+        )
+        forward_again = calculate_tax(
+            monthly_income=reverse["pre_tax_income"],
+            cumulative_income=0,
+            cumulative_tax_free_deduction=0,
+            cumulative_special_deduction=0,
+            months_count=1,
+        )
+        assert abs(forward_again["monthly_tax"] - forward["monthly_tax"]) < 0.02, (
+            f"税前{pre_tax}双向验证失败"
+        )
+    print("=== 测试用例19：双向验证（8000/15000/30000/80000/150000） ===")
+    print("✓ 所有档位双向验证通过\n")
+
+
 if __name__ == "__main__":
     print("开始运行个税计算测试...\n")
     test_case_1()
@@ -251,4 +403,10 @@ if __name__ == "__main__":
     test_bonus_merged_low_income()
     test_compare_modes()
     test_bonus_zero()
+    test_reverse_basic()
+    test_reverse_with_deduction()
+    test_reverse_no_tax()
+    test_reverse_high_income()
+    test_reverse_cumulative()
+    test_reverse_round_trip()
     print("所有测试用例通过！")

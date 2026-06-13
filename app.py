@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from tax_calculator import calculate_tax, calculate_bonus_tax_separate, calculate_bonus_tax_merged, compare_bonus_modes
+from tax_calculator import calculate_tax, calculate_bonus_tax_separate, calculate_bonus_tax_merged, compare_bonus_modes, reverse_calculate_tax
 
 app = Flask(__name__)
 
@@ -124,6 +124,48 @@ def calculate_bonus():
             )
         else:
             return jsonify({"error": f"不支持的计税模式: {mode}，可选值: separate, merged, compare"}), 400
+
+        return jsonify(
+            {
+                "code": 0,
+                "message": "success",
+                "data": result,
+            }
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"服务器内部错误: {str(e)}"}), 500
+
+
+@app.route("/api/tax/reverse", methods=["POST"])
+def reverse_calculate():
+    try:
+        data = request.get_json()
+
+        required_fields = [
+            "after_tax_income",
+            "cumulative_income",
+            "cumulative_tax_free_deduction",
+            "cumulative_special_deduction",
+            "months_count",
+        ]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"缺少必填字段: {field}"}), 400
+
+        result = reverse_calculate_tax(
+            after_tax_income=float(data["after_tax_income"]),
+            cumulative_income=float(data["cumulative_income"]),
+            cumulative_tax_free_deduction=float(data["cumulative_tax_free_deduction"]),
+            cumulative_special_deduction=float(data["cumulative_special_deduction"]),
+            months_count=int(data["months_count"]),
+            cumulative_prepaid_tax=float(data.get("cumulative_prepaid_tax", 0.0)),
+            cumulative_special_additional_deduction=float(
+                data.get("cumulative_special_additional_deduction", 0.0)
+            ),
+            cumulative_other_deduction=float(data.get("cumulative_other_deduction", 0.0)),
+        )
 
         return jsonify(
             {
